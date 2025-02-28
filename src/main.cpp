@@ -17,6 +17,12 @@
 using namespace HighFive; 
 
 
+struct IndicesSOA {
+    std::vector<int> xs;
+    std::vector<int> ys;
+};
+
+
 
 template<int Order>
 struct StencilTraits;
@@ -37,10 +43,11 @@ struct StencilTraits<9> {
 
 class SpaceFillingCurve {
 public:
-    virtual std::vector<std::pair<int,int>> generate(int width, int height, int ghost_size) = 0;
+    virtual IndicesSOA generate(int width, int height, int ghost_size) = 0;
     virtual ~SpaceFillingCurve() {}
 };
 
+/**
 class ZOrderCurve : public SpaceFillingCurve {
 private:
     inline int part1by1(int n) {
@@ -68,14 +75,21 @@ public:
         return indices;
     }
 };
+**/
+
 
 class RowMajorCurve : public SpaceFillingCurve {
 public:
-    std::vector<std::pair<int,int>> generate(int width, int height, int ghost_size) override {
-        std::vector<std::pair<int,int>> indices;
-        for (int y = ghost_size; y < height+ghost_size; ++y) {
-            for (int x = ghost_size; x < width+ghost_size; ++x) {
-                indices.emplace_back(x, y);
+    // Remarquez que la signature change pour retourner un IndicesSOA
+    IndicesSOA generate(int width, int height, int ghost_size) override {
+        IndicesSOA indices;
+        // Réserver l'espace pour éviter des réallocations inutiles
+        indices.xs.reserve(width * height);
+        indices.ys.reserve(width * height);
+        for (int y = ghost_size; y < height + ghost_size; ++y) {
+            for (int x = ghost_size; x < width + ghost_size; ++x) {
+                indices.xs.push_back(x);
+                indices.ys.push_back(y);
             }
         }
         return indices;
@@ -83,6 +97,7 @@ public:
 };
 
 
+/**
 class ColumnMajorCurve : public SpaceFillingCurve {
 public:
     std::vector<std::pair<int,int>> generate(int width, int height, int ghost_size) override {
@@ -95,7 +110,7 @@ public:
         return indices;
     }
 };
-
+**/
 
 /**
 class HilbertCurve : public SpaceFillingCurve {
@@ -189,14 +204,13 @@ public:
         return LaplacianStencil<Order>::compute(grid, x, y, width, height); 
     }
 
-    void update(double dt, const std::vector<std::pair<int,int>>& order) {
+    void update(double dt, const IndicesSOA& order) {
 
 #pragma omp  for schedule(guided)
-//	for (int i = 0 ; i < order.size(); i++){
-        for (const auto &coord : order) {
-//	    auto coord = order[i] ; 
-	    int x = coord.first, y = coord.second;
-//            int x = order[i].first, y = order[i].second;
+	for (int i = 0 ; i < order.xs.size(); i++){
+//        for (const auto &coord : order) {
+//	    int x = coord.first, y = coord.second;
+            int x = order.xs[i], y = order.ys[i];
             int idx = y * (width+2) + x+1;
             double u_val = u[idx];
             double v_val = v[idx];
@@ -344,12 +358,12 @@ int main(int argc, char** argv) {
 //        curve = std::make_unique<HilbertCurve>();
         std::cout << "Utilisation de la courbe Hilbert\n";
     } else if (curveType == "zorder") {
-        curve = std::make_unique<ZOrderCurve>();
+//        curve = std::make_unique<ZOrderCurve>();
         std::cout << "Utilisation de la courbe Z-order\n";
     } else if (curveType == "row") {
 	    curve = std::make_unique<RowMajorCurve>();
     } else if (curveType == "column") {
-            curve = std::make_unique<ColumnMajorCurve>();
+//            curve = std::make_unique<ColumnMajorCurve>();
     }
 
 
