@@ -192,8 +192,11 @@ public:
     void update(double dt, const std::vector<std::pair<int,int>>& order) {
 
 #pragma omp  for schedule(guided)
+//	for (int i = 0 ; i < order.size(); i++){
         for (const auto &coord : order) {
-            int x = coord.first, y = coord.second;
+//	    auto coord = order[i] ; 
+	    int x = coord.first, y = coord.second;
+//            int x = order[i].first, y = order[i].second;
             int idx = y * (width+2) + x+1;
             double u_val = u[idx];
             double v_val = v[idx];
@@ -329,9 +332,9 @@ void handleOutput(int iteration, int width, int height, GrayScottModel<Order>& m
 
 int main(int argc, char** argv) {
 //	std::string curveType = "column"
-//	std::string curveType = "row" ; 
+	std::string curveType = "row" ; 
 //    std::string curveType = "classic"	
-    std::string curveType = "zorder";
+//  std::string curveType = "zorder";
 //    std::string curveType = "hilbert";
     if (argc > 1) {
         curveType = argv[1];
@@ -357,7 +360,7 @@ int main(int argc, char** argv) {
 
     // Configuration de la sortie
     OutputSettings settings;
-    settings.enableOutput = false;    // Peut être mis à false pour performances
+    settings.enableOutput = true;    // Peut être mis à false pour performances
     settings.saveInterval = 100;     // Sauvegarde toutes les 100 itérations
     settings.baseName = "grayscott_5";
 
