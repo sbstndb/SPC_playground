@@ -18,6 +18,23 @@ using namespace HighFive;
 
 
 
+template<int Order>
+struct StencilTraits;
+
+// Spécialisation pour le stencil à 5 points
+template<>
+struct StencilTraits<5> {
+    static constexpr int ghost_size = 1;
+};
+
+// Spécialisation pour le stencil à 9 points
+template<>
+struct StencilTraits<9> {
+    static constexpr int ghost_size = 2;
+};
+
+
+
 class SpaceFillingCurve {
 public:
     virtual std::vector<std::pair<int,int>> generate(int width, int height, int ghost_size) = 0;
@@ -94,56 +111,42 @@ public:
 
 
 
-template <int Order, int ghost_size>
-struct LaplacianStencil;
-
-
-template <>
-struct LaplacianStencil<5, 1> {
+template <int Order>
+struct LaplacianStencil {
     inline static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
-	const int ghost_size = 1 ; 
-        double sum = 0.0;
-	int width_with_ghost = width + 2*ghost_size ; 
-        int idx = y * (width_with_ghost) + x + ghost_size;
-        sum -= 4 * grid[idx];
-        double up     = grid[idx - (width_with_ghost)] * (y > ghost_size);
-        double down   = grid[idx + (width_with_ghost) ] * (y < height - 1 + 2 *ghost_size);
-        double left   = grid[idx - 1] * (x > ghost_size);
-        double right  = grid[idx + 1]  * (x < width_with_ghost -1);
-	sum += up+down+left+right ; 
-        return sum;
+        constexpr int ghost_size = StencilTraits<Order>::ghost_size;
+//	const int ghost_size = 1 ; 
+	if constexpr(Order == 5){
+	        double sum = 0.0;
+		int width_with_ghost = width + 2*ghost_size ; 
+	        int idx = y * (width_with_ghost) + x + ghost_size;
+	        sum -= 4 * grid[idx];
+	        double up     = grid[idx - (width_with_ghost)] * (y > ghost_size);
+	        double down   = grid[idx + (width_with_ghost) ] * (y < height - 1 + 2 *ghost_size);
+	        double left   = grid[idx - 1] * (x > ghost_size);
+	        double right  = grid[idx + 1]  * (x < width_with_ghost -1);
+		sum += up+down+left+right ; 
+	        return sum;
+	}
+	else if constexpr( Order == 9){
+	        int idx = y * width + x;
+	        double center = grid[idx];
+	        // Pour gérer les conditions aux limites, on peut utiliser la valeur centrale en bordure.
+	        double north = (y > 0) ? grid[(y - 1) * width + x] : center;
+	        double south = (y < height - 1) ? grid[(y + 1) * width + x] : center;
+	        double west  = (x > 0) ? grid[y * width + (x - 1)] : center;
+	        double east  = (x < width - 1) ? grid[y * width + (x + 1)] : center;
+	        double nw    = (y > 0 && x > 0) ? grid[(y - 1) * width + (x - 1)] : center;
+	        double ne    = (y > 0 && x < width - 1) ? grid[(y - 1) * width + (x + 1)] : center;
+	        double sw    = (y < height - 1 && x > 0) ? grid[(y + 1) * width + (x - 1)] : center;
+	        double se    = (y < height - 1 && x < width - 1) ? grid[(y + 1) * width + (x + 1)] : center;	
+	        double lap = (4.0 * (north + south + east + west) +
+	                      (nw + ne + sw + se) -
+	                      20.0 * center) / 6.0;
+	        return lap;
+	}
     }
 };
-
-
-// Spécialisation pour le stencil à 9 points
-template <>
-struct LaplacianStencil<9,0> {
-    static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
-        int idx = y * width + x;
-        double center = grid[idx];
-        // Pour gérer les conditions aux limites, on peut utiliser la valeur centrale en bordure.
-        double north = (y > 0) ? grid[(y - 1) * width + x] : center;
-        double south = (y < height - 1) ? grid[(y + 1) * width + x] : center;
-        double west  = (x > 0) ? grid[y * width + (x - 1)] : center;
-        double east  = (x < width - 1) ? grid[y * width + (x + 1)] : center;
-        double nw    = (y > 0 && x > 0) ? grid[(y - 1) * width + (x - 1)] : center;
-        double ne    = (y > 0 && x < width - 1) ? grid[(y - 1) * width + (x + 1)] : center;
-        double sw    = (y < height - 1 && x > 0) ? grid[(y + 1) * width + (x - 1)] : center;
-        double se    = (y < height - 1 && x < width - 1) ? grid[(y + 1) * width + (x + 1)] : center;
-
-        // Application de la formule du stencil à 9 points :
-        // lap = (4*(north + south + east + west) + (nw + ne + sw + se) - 20*center) / 6
-        double lap = (4.0 * (north + south + east + west) +
-                      (nw + ne + sw + se) -
-                      20.0 * center) / 6.0;
-        return lap;
-    }
-};
-
-
-
-
 
 
 struct GrayScottParameters {
@@ -153,14 +156,14 @@ struct GrayScottParameters {
     double k; 
 };
 
-
+template <int Order>
 class GrayScottModel {
 public:
     int width, height;
     std::vector<double> u, u_buffer;
     std::vector<double> v, v_buffer;
     GrayScottParameters params;
-    int ghost_size = 1 ; 
+    static constexpr int ghost_size = StencilTraits<Order>::ghost_size; 
 
     GrayScottModel(int w, int h, GrayScottParameters p)
         : width(w), height(h), params(p)
@@ -182,10 +185,8 @@ public:
     }
 
 
-
-
     inline double laplacian(const std::vector<double>& grid, int x, int y) {
-        return LaplacianStencil<5,1>::compute(grid, x, y, width, height); 
+        return LaplacianStencil<Order>::compute(grid, x, y, width, height); 
     }
 
     void update(double dt, const std::vector<std::pair<int,int>>& order) {
@@ -293,8 +294,9 @@ void saveInitialMesh(int width, int height, const std::string& hdf5Filename, con
 }
 
 // Sauvegarde des données à une itération donnée
+template <int Order>
 void saveIterationData(const std::string& hdf5Filename, int width, int height,
-                      const GrayScottModel& model, int iteration) {
+                      const GrayScottModel<Order>& model, int iteration) {
     File file(hdf5Filename, File::ReadWrite | File::Create | File::Truncate);
     DataSpace space({static_cast<size_t>(height), static_cast<size_t>(width)});
 
@@ -306,7 +308,8 @@ void saveIterationData(const std::string& hdf5Filename, int width, int height,
 }
 
 // Gestion principale de la sauvegarde
-void handleOutput(int iteration, int width, int height, GrayScottModel& model,
+template <int Order>
+void handleOutput(int iteration, int width, int height, GrayScottModel<Order>& model,
                  const OutputSettings& settings) {
     if (!settings.enableOutput) return;
 
@@ -364,7 +367,7 @@ int main(int argc, char** argv) {
 
     
     GrayScottParameters params = {0.16, 0.08, 0.060, 0.062};
-    GrayScottModel model(width, height, params);
+    GrayScottModel<5> model(width, height, params);
 
     // Sauvegarde initiale
     handleOutput(0, width+2*ghost_size, height+2*ghost_size, model, settings);
