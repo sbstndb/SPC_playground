@@ -105,10 +105,10 @@ struct LaplacianStencil<5, 1> {
         double sum = 0.0;
         int idx = y * (width+2*ghost_size) + x + ghost_size;
         sum -= 4 * grid[idx];
-        double up     = grid[(y - 1) * (width+2*ghost_size) + x + ghost_size] * (y > ghost_size);
-        double down   = grid[(y + 1) * (width+2*ghost_size) + x + ghost_size] * (y < height - 1 + 2 *ghost_size);
-        double left   = grid[y * (width+2*ghost_size) + (x - 1) + ghost_size] * (x > ghost_size);
-        double right  = grid[y * (width+2*ghost_size) + (x + 1) + ghost_size]  * (x < width - 1 + 2*ghost_size);
+        double up     = grid[idx - (width+2*ghost_size)] * (y > ghost_size);
+        double down   = grid[idx + (width+2*ghost_size) ] * (y < height - 1 + 2 *ghost_size);
+        double left   = grid[idx - 1] * (x > ghost_size);
+        double right  = grid[idx + 1]  * (x < width - 1 + 2*ghost_size);
 	sum += up+down+left+right ; 
         return sum;
     }
@@ -342,9 +342,9 @@ void handleOutput(int iteration, int width, int height, GrayScottModel& model,
 
 int main(int argc, char** argv) {
 //	std::string curveType = "column"
-//	std::string curveType = "row" ; 
+	std::string curveType = "row" ; 
 //    std::string curveType = "classic"	
-    std::string curveType = "zorder";
+//    std::string curveType = "zorder";
 //    std::string curveType = "hilbert";
     if (argc > 1) {
         curveType = argv[1];
