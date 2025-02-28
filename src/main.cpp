@@ -1,0 +1,374 @@
+#include <iostream>
+#include <vector>
+#include <chrono>
+#include <cmath>
+#include <string>
+#include <memory>
+#include <algorithm>
+#include <fstream>
+
+//#include <highfive/highfive.hpp>
+#include <highfive/H5File.hpp>
+#include <highfive/H5DataSet.hpp>
+#include <highfive/H5DataSpace.hpp>
+
+#include <omp.h>
+
+using namespace HighFive; 
+
+
+
+class SpaceFillingCurve {
+public:
+    virtual std::vector<std::pair<int,int>> generate(int width, int height) = 0;
+    virtual ~SpaceFillingCurve() {}
+};
+
+class ZOrderCurve : public SpaceFillingCurve {
+private:
+    inline int part1by1(int n) {
+        n = (n | (n << 8)) & 0x00FF00FF;
+        n = (n | (n << 4)) & 0x0F0F0F0F;
+        n = (n | (n << 2)) & 0x33333333;
+        n = (n | (n << 1)) & 0x55555555;
+        return n;
+    }
+    inline int morton(int x, int y) {
+        return (part1by1(y) << 1) | part1by1(x);
+    }
+public:
+    std::vector<std::pair<int,int>> generate(int width, int height) override {
+        std::vector<std::pair<int,int>> indices;
+        indices.reserve(width * height);
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                indices.emplace_back(x, y);
+            }
+        }
+        std::sort(indices.begin(), indices.end(), [&](const std::pair<int,int>& a, const std::pair<int,int>& b){
+            return morton(a.first, a.second) < morton(b.first, b.second);
+        });
+        return indices;
+    }
+};
+
+class RowMajorCurve : public SpaceFillingCurve {
+public:
+    std::vector<std::pair<int,int>> generate(int width, int height) override {
+        std::vector<std::pair<int,int>> indices;
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                indices.emplace_back(x, y);
+            }
+        }
+        return indices;
+    }
+};
+
+
+class ColumnMajorCurve : public SpaceFillingCurve {
+public:
+    std::vector<std::pair<int,int>> generate(int width, int height) override {
+        std::vector<std::pair<int,int>> indices;
+        for (int x = 0; x < width; ++x) {
+            for (int y = 0; y < height; ++y) {
+                indices.emplace_back(x, y);
+            }
+        }
+        return indices;
+    }
+};
+
+
+/**
+class HilbertCurve : public SpaceFillingCurve {
+	// to do 
+public:
+    std::vector<std::pair<int,int>> generate(int width, int height) override {
+        std::vector<std::pair<int,int>> indices;
+
+        return indices;
+    }
+};
+**/
+
+
+
+template <int Order>
+struct LaplacianStencil;
+/**
+template <>
+struct LaplacianStencil<5> {
+    static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
+        double sum = 0.0;
+        int idx = y * width + x;
+        sum -= 4 * grid[idx];
+        double up     = grid[(y - 1) * width + x] * (y > 0);
+        double down   = grid[(y + 1) * width + x] * (y < height - 1);
+        double left   = grid[y * width + (x - 1)] * (x > 0);
+        double right  = grid[y * width + (x + 1)]  * (x < width - 1);
+	sum += up+down+left+right ; 
+        return sum;
+    }
+};
+
+**/
+template <>
+struct LaplacianStencil<5> {
+    static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
+        double sum = 0.0;
+        int idx = y * width + x;
+        sum -= 4 * grid[idx];
+        if (y > 0)         sum += grid[(y - 1) * width + x];
+        if (y < height - 1) sum += grid[(y + 1) * width + x];
+        if (x > 0)         sum += grid[y * width + (x - 1)];
+        if (x < width - 1)  sum += grid[y * width + (x + 1)];
+        return sum;
+    }
+};
+
+
+
+
+// Spécialisation pour le stencil à 9 points
+template <>
+struct LaplacianStencil<9> {
+    static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
+        int idx = y * width + x;
+        double center = grid[idx];
+        // Pour gérer les conditions aux limites, on peut utiliser la valeur centrale en bordure.
+        double north = (y > 0) ? grid[(y - 1) * width + x] : center;
+        double south = (y < height - 1) ? grid[(y + 1) * width + x] : center;
+        double west  = (x > 0) ? grid[y * width + (x - 1)] : center;
+        double east  = (x < width - 1) ? grid[y * width + (x + 1)] : center;
+        double nw    = (y > 0 && x > 0) ? grid[(y - 1) * width + (x - 1)] : center;
+        double ne    = (y > 0 && x < width - 1) ? grid[(y - 1) * width + (x + 1)] : center;
+        double sw    = (y < height - 1 && x > 0) ? grid[(y + 1) * width + (x - 1)] : center;
+        double se    = (y < height - 1 && x < width - 1) ? grid[(y + 1) * width + (x + 1)] : center;
+
+        // Application de la formule du stencil à 9 points :
+        // lap = (4*(north + south + east + west) + (nw + ne + sw + se) - 20*center) / 6
+        double lap = (4.0 * (north + south + east + west) +
+                      (nw + ne + sw + se) -
+                      20.0 * center) / 6.0;
+        return lap;
+    }
+};
+
+
+
+
+
+
+struct GrayScottParameters {
+    double Du;
+    double Dv;
+    double F; 
+    double k; 
+};
+
+
+class GrayScottModel {
+public:
+    int width, height;
+    std::vector<double> u, u_buffer;
+    std::vector<double> v, v_buffer;
+    GrayScottParameters params;
+
+    GrayScottModel(int w, int h, GrayScottParameters p)
+        : width(w), height(h), params(p)
+    {
+        u.resize(width * height, 1.0);
+        v.resize(width * height, 0.0);
+        u_buffer.resize(width * height, 0.0);
+        v_buffer.resize(width * height, 0.0);
+
+        int cx = width / 2, cy = height / 2;
+        for (int j = cy - 10; j < cy + 10; ++j) {
+            for (int i = cx - 10; i < cx + 10; ++i) {
+                if(i >= 0 && i < width && j >= 0 && j < height) {
+                    u[j * width + i] = 0.50;
+                    v[j * width + i] = 0.25;
+                }
+            }
+        }
+    }
+
+
+
+
+    inline double laplacian(const std::vector<double>& grid, int x, int y) {
+        return LaplacianStencil<5>::compute(grid, x, y, width, height) ; 
+    }
+
+    void update(double dt, const std::vector<std::pair<int,int>>& order) {
+
+#pragma omp  for schedule(guided)
+        for (const auto &coord : order) {
+            int x = coord.first, y = coord.second;
+            int idx = y * width + x;
+            double u_val = u[idx];
+            double v_val = v[idx];
+            double Lu = laplacian(u, x, y);
+            double Lv = laplacian(v, x, y);
+
+            double reaction = u_val * v_val * v_val;
+            u_buffer[idx] = u_val + (params.Du * Lu - reaction + params.F * (1 - u_val)) * dt;
+            v_buffer[idx] = v_val + (params.Dv * Lv + reaction - (params.F + params.k) * v_val) * dt;
+        }
+#pragma omp single
+	{	
+        std::swap(u, u_buffer);
+        std::swap(v, v_buffer);
+	}
+    }
+};
+
+
+// Structure pour gérer les paramètres de sauvegarde
+struct OutputSettings {
+    bool enableOutput = true;    // Activer/Désactiver la sauvegarde
+    int saveInterval = 100;      // Intervalle de sauvegarde
+    std::string baseName;        // Nom de base des fichiers
+};
+
+// Fonction pour créer le contenu XDMF
+std::string createXDMFContent(int width, int height, const std::string& hdf5Filename) {
+    std::ostringstream xdmf;
+    xdmf << "<?xml version=\"1.0\" ?>\n"
+         << "<!DOCTYPE Xdmf SYSTEM \"Xdmf.dtd\" []>\n"
+         << "<Xdmf Version=\"2.0\">\n"
+         << " <Domain>\n"
+         << "   <Grid Name=\"GrayScottModel\" GridType=\"Uniform\">\n"
+         << "     <Topology TopologyType=\"2DCoRectMesh\" Dimensions=\"" << height << " " << width << "\"/>\n"
+         << "     <Geometry GeometryType=\"ORIGIN_DXDY\">\n"
+         << "       <DataItem Dimensions=\"2\" NumberType=\"Float\" Precision=\"8\" Format=\"XML\">0 0</DataItem>\n"
+         << "       <DataItem Dimensions=\"2\" NumberType=\"Float\" Precision=\"8\" Format=\"XML\">"
+         << 1.0/width << " " << 1.0/height << "</DataItem>\n"
+         << "     </Geometry>\n"
+         << "     <Attribute Name=\"U\" AttributeType=\"Scalar\" Center=\"Node\">\n"
+         << "       <DataItem Dimensions=\"" << height << " " << width << "\" NumberType=\"Float\" Precision=\"8\" Format=\"HDF\">"
+         << hdf5Filename << ":/U</DataItem>\n"
+         << "     </Attribute>\n"
+         << "     <Attribute Name=\"V\" AttributeType=\"Scalar\" Center=\"Node\">\n"
+         << "       <DataItem Dimensions=\"" << height << " " << width << "\" NumberType=\"Float\" Precision=\"8\" Format=\"HDF\">"
+         << hdf5Filename << ":/V</DataItem>\n"
+         << "     </Attribute>\n"
+         << "   </Grid>\n"
+         << " </Domain>\n"
+         << "</Xdmf>\n";
+    return xdmf.str();
+}
+
+// Initialisation du maillage initial
+void saveInitialMesh(int width, int height, const std::string& hdf5Filename, const std::string& xdmfFilename) {
+    std::ofstream xdmf(xdmfFilename, std::ios::out | std::ios::trunc);
+    if (!xdmf.is_open()) {
+        std::cerr << "Erreur: Impossible d'ouvrir " << xdmfFilename << std::endl;
+        return;
+    }
+    xdmf << createXDMFContent(width, height, hdf5Filename);
+    xdmf.close();
+}
+
+// Sauvegarde des données à une itération donnée
+void saveIterationData(const std::string& hdf5Filename, int width, int height,
+                      const GrayScottModel& model, int iteration) {
+    File file(hdf5Filename, File::ReadWrite | File::Create | File::Truncate);
+    DataSpace space({static_cast<size_t>(height), static_cast<size_t>(width)});
+
+    DataSet u_dataset = file.createDataSet<double>("U", space);
+    DataSet v_dataset = file.createDataSet<double>("V", space);
+    u_dataset.write_raw(model.u.data());
+    v_dataset.write_raw(model.v.data());
+    file.flush();
+}
+
+// Gestion principale de la sauvegarde
+void handleOutput(int iteration, int width, int height, GrayScottModel& model,
+                 const OutputSettings& settings) {
+    if (!settings.enableOutput) return;
+
+    if (iteration == 0 || (iteration % settings.saveInterval == 0)) {
+        std::string hdf5Filename = settings.baseName + "_iter" + std::to_string(iteration) + ".h5";
+        std::string xdmfFilename = settings.baseName + "_iter" + std::to_string(iteration) + ".xdmf";
+
+        saveIterationData(hdf5Filename, width, height, model, iteration);
+        saveInitialMesh(width, height, hdf5Filename, xdmfFilename);
+
+        std::cout << "Sauvegarde iteration " << iteration << ": "
+                  << hdf5Filename << ", " << xdmfFilename << std::endl;
+    }
+}
+
+
+
+int main(int argc, char** argv) {
+//	std::string curveType = "column"
+//	std::string curveType = "row" ; 
+//    std::string curveType = "classic"	
+    std::string curveType = "zorder";
+//    std::string curveType = "hilbert";
+    if (argc > 1) {
+        curveType = argv[1];
+    }
+    std::unique_ptr<SpaceFillingCurve> curve;
+    if (curveType == "hilbert") {
+//        curve = std::make_unique<HilbertCurve>();
+        std::cout << "Utilisation de la courbe Hilbert\n";
+    } else if (curveType == "zorder") {
+        curve = std::make_unique<ZOrderCurve>();
+        std::cout << "Utilisation de la courbe Z-order\n";
+    } else if (curveType == "row") {
+	    curve = std::make_unique<RowMajorCurve>();
+    } else if (curveType == "column") {
+            curve = std::make_unique<ColumnMajorCurve>();
+    }
+
+
+    const int width = 512;
+    const int height = 512;
+
+    // Configuration de la sortie
+    OutputSettings settings;
+    settings.enableOutput = true;    // Peut être mis à false pour performances
+    settings.saveInterval = 100;     // Sauvegarde toutes les 100 itérations
+    settings.baseName = "grayscott_5";
+
+
+
+    auto order = curve->generate(width, height);
+
+    
+    GrayScottParameters params = {0.16, 0.08, 0.060, 0.062};
+    GrayScottModel model(width, height, params);
+
+    // Sauvegarde initiale
+    handleOutput(0, width, height, model, settings);
+
+
+    const int steps = 5000;
+    const double dt = 1.0;
+    auto start = std::chrono::high_resolution_clock::now();
+#pragma omp parallel
+    {
+    for (int i = 0; i < steps; ++i) {
+        model.update(dt, order);
+#pragma omp single
+	{	
+        if (settings.enableOutput && (i % settings.saveInterval == 0)) {
+            handleOutput(i, width, height, model, settings);
+        }
+        if (i % 1000 == 0) {
+            std::cout << "Étape " << i << "\n";
+        }
+	}
+    }
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::cout << "Simulation terminée en " << elapsed.count() << " secondes.\n";
+
+    return 0;
+}
+
