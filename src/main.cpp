@@ -47,7 +47,7 @@ public:
     virtual ~SpaceFillingCurve() {}
 };
 
-/**
+
 class ZOrderCurve : public SpaceFillingCurve {
 private:
     inline int part1by1(int n) {
@@ -61,21 +61,32 @@ private:
         return (part1by1(y) << 1) | part1by1(x);
     }
 public:
-    std::vector<std::pair<int,int>> generate(int width, int height, int ghost_size) override {
+    IndicesSOA generate(int width, int height, int ghost_size) override {
+        // Création d'un vecteur de paires (x, y)
         std::vector<std::pair<int,int>> indices;
-        indices.reserve(width * height);
-        for (int y = ghost_size; y < height; ++y) {
-            for (int x = ghost_size; x < width; ++x) {
+        indices.reserve((width ) * (height));
+        for (int y = ghost_size; y < height+ghost_size; ++y) {
+            for (int x = ghost_size; x < width+ghost_size; ++x) {
                 indices.emplace_back(x, y);
             }
         }
+        // Tri selon l'ordre de Z (courbe de Morton)
         std::sort(indices.begin(), indices.end(), [&](const std::pair<int,int>& a, const std::pair<int,int>& b){
             return morton(a.first, a.second) < morton(b.first, b.second);
         });
-        return indices;
+        
+        // Remplissage de la structure IndicesSOA
+        IndicesSOA result;
+        result.xs.reserve(indices.size());
+        result.ys.reserve(indices.size());
+        for (const auto& p : indices) {
+            result.xs.push_back(p.first);
+            result.ys.push_back(p.second);
+        }
+        return result;
     }
 };
-**/
+
 
 
 class RowMajorCurve : public SpaceFillingCurve {
@@ -136,10 +147,10 @@ struct LaplacianStencil {
 		int width_with_ghost = width + 2*ghost_size ; 
 	        int idx = y * (width_with_ghost) + x + ghost_size;
 	        sum -= 4 * grid[idx];
-	        double up     = grid[idx - (width_with_ghost)] * (y > ghost_size);
-	        double down   = grid[idx + (width_with_ghost) ] * (y < height - 1 + 2 *ghost_size);
-	        double left   = grid[idx - 1] * (x > ghost_size);
-	        double right  = grid[idx + 1]  * (x < width_with_ghost -1);
+	        double up     = grid[idx - (width_with_ghost)] ;//* (y > ghost_size);
+	        double down   = grid[idx + (width_with_ghost) ] ;//* (y < height - 1 + 2 *ghost_size);
+	        double left   = grid[idx - 1] ;//* (x > ghost_size);
+	        double right  = grid[idx + 1] ;// * (x < width_with_ghost -1);
 		sum += up+down+left+right ; 
 	        return sum;
 	}
@@ -206,12 +217,16 @@ public:
 
     void update(double dt, const IndicesSOA& order) {
 
+	    double FpK = params.F + params.k ; 
 #pragma omp  for schedule(guided)
-	for (int i = 0 ; i < order.xs.size(); i++){
+//	for (int y = 1 ; y < height + 1 ; y++){
+//		for (int x = 1; x < width + 1 ; x++){
+	for (int i = 0 ; i < order.xs.size(); i+=1){
 //        for (const auto &coord : order) {
 //	    int x = coord.first, y = coord.second;
             int x = order.xs[i], y = order.ys[i];
-            int idx = y * (width+2) + x+1;
+//            int idx = y * (width+2) + x+1;
+            int idx = y * (width+2) + x+1 ; 
             double u_val = u[idx];
             double v_val = v[idx];
             double Lu = laplacian(u, x, y);
@@ -219,7 +234,8 @@ public:
 
             double reaction = u_val * v_val * v_val;
             u_buffer[idx] = u_val + (params.Du * Lu - reaction + params.F * (1 - u_val)) * dt;
-            v_buffer[idx] = v_val + (params.Dv * Lv + reaction - (params.F + params.k) * v_val) * dt;
+            v_buffer[idx] = v_val + (params.Dv * Lv + reaction - (FpK) * v_val) * dt;
+
         }
 #pragma omp single
 	{	
@@ -240,25 +256,26 @@ void zero_ghosts(std::vector<double>& grid, int width, int height, int ghost_siz
 		}
                 // top ghosts
                 for (int i = 0 ; i < width + 2 * ghost_size ; i++){
-                        idx = (height + 2*ghost_size - g) * width - i ;
+                        idx = (height + 2*ghost_size - g) * (width+2*ghost_size) - i ;
                         grid[idx] = 0.0 ;
                 }
-		
 	}
 	// left and right ghosts
+	
 	for (int j = ghost_size ; j < height + ghost_size; j++){
 		// left ghosts
 		for (int g = 0 ; g < ghost_size ; g++){
-			idx = j * width + g ; 	
+			idx = j * (width+2*ghost_size) + g ; 	
 			grid[idx] = 0.0 ; 
 		}		
                 // right ghosts
                 for (int g = 0 ; g < ghost_size ; g++){
-                        idx = j * width + g + width + ghost_size;
+                        idx = j * (width+2*ghost_size) + g + width + ghost_size;
                         grid[idx] = 0.0 ;
                 }
 		
 	}
+	
 
     }
 };
@@ -358,7 +375,7 @@ int main(int argc, char** argv) {
 //        curve = std::make_unique<HilbertCurve>();
         std::cout << "Utilisation de la courbe Hilbert\n";
     } else if (curveType == "zorder") {
-//        curve = std::make_unique<ZOrderCurve>();
+        curve = std::make_unique<ZOrderCurve>();
         std::cout << "Utilisation de la courbe Z-order\n";
     } else if (curveType == "row") {
 	    curve = std::make_unique<RowMajorCurve>();
@@ -390,13 +407,15 @@ int main(int argc, char** argv) {
     handleOutput(0, width+2*ghost_size, height+2*ghost_size, model, settings);
 
 
-    const int steps = 5000;
+    const int steps = 1000;
     const double dt = 1.0;
     auto start = std::chrono::high_resolution_clock::now();
 #pragma omp parallel
     {
     for (int i = 0; i < steps; ++i) {
         model.update(dt, order);
+	model.zero_ghosts(model.u, width, height, ghost_size) ; 
+	model.zero_ghosts(model.v, width, height, ghost_size);
 #pragma omp single
 	{	
         if (settings.enableOutput && (i % settings.saveInterval == 0)) {
