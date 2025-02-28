@@ -94,18 +94,19 @@ public:
 
 
 
-template <int Order>
+template <int Order, int ghost_size>
 struct LaplacianStencil;
 
 
 template <>
-struct LaplacianStencil<5> {
-    static double compute(const std::vector<double>& grid, int x, int y, int width, int height, int ghost_size) {
+struct LaplacianStencil<5, 1> {
+    static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
+	const int ghost_size = 1 ; 
         double sum = 0.0;
         int idx = y * (width+2*ghost_size) + x + ghost_size;
         sum -= 4 * grid[idx];
         double up     = grid[(y - 1) * (width+2*ghost_size) + x + ghost_size] * (y > ghost_size);
-        double down   = grid[(y + 1) * (width+2*ghost_size) + x + ghost_size] * (y < height - 1 +2*ghost_size);
+        double down   = grid[(y + 1) * (width+2*ghost_size) + x + ghost_size] * (y < height - 1 + 2 *ghost_size);
         double left   = grid[y * (width+2*ghost_size) + (x - 1) + ghost_size] * (x > ghost_size);
         double right  = grid[y * (width+2*ghost_size) + (x + 1) + ghost_size]  * (x < width - 1 + 2*ghost_size);
 	sum += up+down+left+right ; 
@@ -115,8 +116,8 @@ struct LaplacianStencil<5> {
 
 /**
 template <>
-struct LaplacianStencil<5> {
-    static double compute(const std::vector<double>& grid, int x, int y, int width, int height, int ghost_size) {
+struct LaplacianStencil<5,0> {
+    static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
         double sum = 0.0;
         int idx = y * (width+2*ghost_size) + x + ghost_size;
         sum -= 4 * grid[idx];
@@ -133,8 +134,8 @@ struct LaplacianStencil<5> {
 
 // Spécialisation pour le stencil à 9 points
 template <>
-struct LaplacianStencil<9> {
-    static double compute(const std::vector<double>& grid, int x, int y, int width, int height, int ghost_size) {
+struct LaplacianStencil<9,0> {
+    static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
         int idx = y * width + x;
         double center = grid[idx];
         // Pour gérer les conditions aux limites, on peut utiliser la valeur centrale en bordure.
@@ -200,7 +201,7 @@ public:
 
 
     inline double laplacian(const std::vector<double>& grid, int x, int y) {
-        return LaplacianStencil<5>::compute(grid, x, y, width, height, 1) ; 
+        return LaplacianStencil<5,1>::compute(grid, x, y, width, height); 
     }
 
     void update(double dt, const std::vector<std::pair<int,int>>& order) {
@@ -341,9 +342,9 @@ void handleOutput(int iteration, int width, int height, GrayScottModel& model,
 
 int main(int argc, char** argv) {
 //	std::string curveType = "column"
-	std::string curveType = "row" ; 
+//	std::string curveType = "row" ; 
 //    std::string curveType = "classic"	
-//    std::string curveType = "zorder";
+    std::string curveType = "zorder";
 //    std::string curveType = "hilbert";
     if (argc > 1) {
         curveType = argv[1];
