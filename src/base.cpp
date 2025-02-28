@@ -70,8 +70,8 @@ public:
     void update(double dt, const int width, const int height) {
 
 #pragma omp for schedule(guided)
-        for (int x = 0 ; x < width ; x++) {
-		for (int y = 0 ; y < height ; y++){
+        for (int y = 0 ; y < height ; y++) {
+		for (int x = 0 ; x < width ; x++){
 	            int idx = y * width + x;
 	            double u_val = u[idx];
 	            double v_val = v[idx];
@@ -94,7 +94,7 @@ public:
 
 // Structure pour gérer les paramètres de sauvegarde
 struct OutputSettings {
-    bool enableOutput = true;    // Activer/Désactiver la sauvegarde
+    bool enableOutput = false;    // Activer/Désactiver la sauvegarde
     int saveInterval = 100;      // Intervalle de sauvegarde
     std::string baseName;        // Nom de base des fichiers
 };
@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
     // Sauvegarde initiale
     handleOutput(0, width, height, model, settings);
 
-    const int steps = 2000;
+    const int steps = 5000;
     const double dt = 1.0;
     auto start = std::chrono::high_resolution_clock::now();
 #pragma omp parallel

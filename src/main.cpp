@@ -100,7 +100,7 @@ struct LaplacianStencil;
 
 template <>
 struct LaplacianStencil<5, 1> {
-    static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
+    inline static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
 	const int ghost_size = 1 ; 
         double sum = 0.0;
 	int width_with_ghost = width + 2*ghost_size ; 
@@ -114,23 +114,6 @@ struct LaplacianStencil<5, 1> {
         return sum;
     }
 };
-
-/**
-template <>
-struct LaplacianStencil<5,0> {
-    static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
-        double sum = 0.0;
-        int idx = y * (width+2*ghost_size) + x + ghost_size;
-        sum -= 4 * grid[idx];
-        if (y > ghost_size)         sum += grid[(y - 1) * (width+2*ghost_size) + x + ghost_size];
-        if (y < height - 1 + 2*ghost_size) sum += grid[(y + 1) * (width+2*ghost_size) + x + ghost_size];
-        if (x > + ghost_size)         sum += grid[y * (width+2*ghost_size) + (x - 1) + ghost_size];
-        if (x < width - 1 + 2*ghost_size)  sum += grid[y * (width+2*ghost_size) + (x + 1) + ghost_size];
-        return sum;
-    }
-};
-**/
-
 
 
 // Spécialisation pour le stencil à 9 points
@@ -343,9 +326,9 @@ void handleOutput(int iteration, int width, int height, GrayScottModel& model,
 
 int main(int argc, char** argv) {
 //	std::string curveType = "column"
-	std::string curveType = "row" ; 
+//	std::string curveType = "row" ; 
 //    std::string curveType = "classic"	
-//    std::string curveType = "zorder";
+    std::string curveType = "zorder";
 //    std::string curveType = "hilbert";
     if (argc > 1) {
         curveType = argv[1];
@@ -371,7 +354,7 @@ int main(int argc, char** argv) {
 
     // Configuration de la sortie
     OutputSettings settings;
-    settings.enableOutput = true;    // Peut être mis à false pour performances
+    settings.enableOutput = false;    // Peut être mis à false pour performances
     settings.saveInterval = 100;     // Sauvegarde toutes les 100 itérations
     settings.baseName = "grayscott_5";
 
