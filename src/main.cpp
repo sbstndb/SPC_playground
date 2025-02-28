@@ -103,12 +103,13 @@ struct LaplacianStencil<5, 1> {
     static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
 	const int ghost_size = 1 ; 
         double sum = 0.0;
-        int idx = y * (width+2*ghost_size) + x + ghost_size;
+	int width_with_ghost = width + 2*ghost_size ; 
+        int idx = y * (width_with_ghost) + x + ghost_size;
         sum -= 4 * grid[idx];
-        double up     = grid[idx - (width+2*ghost_size)] * (y > ghost_size);
-        double down   = grid[idx + (width+2*ghost_size) ] * (y < height - 1 + 2 *ghost_size);
+        double up     = grid[idx - (width_with_ghost)] * (y > ghost_size);
+        double down   = grid[idx + (width_with_ghost) ] * (y < height - 1 + 2 *ghost_size);
         double left   = grid[idx - 1] * (x > ghost_size);
-        double right  = grid[idx + 1]  * (x < width - 1 + 2*ghost_size);
+        double right  = grid[idx + 1]  * (x < width_with_ghost -1);
 	sum += up+down+left+right ; 
         return sum;
     }
