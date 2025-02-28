@@ -20,7 +20,7 @@ using namespace HighFive;
 
 class SpaceFillingCurve {
 public:
-    virtual std::vector<std::pair<int,int>> generate(int width, int height) = 0;
+    virtual std::vector<std::pair<int,int>> generate(int width, int height, int ghost_size) = 0;
     virtual ~SpaceFillingCurve() {}
 };
 
@@ -37,11 +37,11 @@ private:
         return (part1by1(y) << 1) | part1by1(x);
     }
 public:
-    std::vector<std::pair<int,int>> generate(int width, int height) override {
+    std::vector<std::pair<int,int>> generate(int width, int height, int ghost_size) override {
         std::vector<std::pair<int,int>> indices;
         indices.reserve(width * height);
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
+        for (int y = ghost_size; y < height; ++y) {
+            for (int x = ghost_size; x < width; ++x) {
                 indices.emplace_back(x, y);
             }
         }
@@ -54,10 +54,10 @@ public:
 
 class RowMajorCurve : public SpaceFillingCurve {
 public:
-    std::vector<std::pair<int,int>> generate(int width, int height) override {
+    std::vector<std::pair<int,int>> generate(int width, int height, int ghost_size) override {
         std::vector<std::pair<int,int>> indices;
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
+        for (int y = ghost_size; y < height+ghost_size; ++y) {
+            for (int x = ghost_size; x < width+ghost_size; ++x) {
                 indices.emplace_back(x, y);
             }
         }
@@ -68,10 +68,10 @@ public:
 
 class ColumnMajorCurve : public SpaceFillingCurve {
 public:
-    std::vector<std::pair<int,int>> generate(int width, int height) override {
+    std::vector<std::pair<int,int>> generate(int width, int height, int ghost_size) override {
         std::vector<std::pair<int,int>> indices;
-        for (int x = 0; x < width; ++x) {
-            for (int y = 0; y < height; ++y) {
+        for (int x = ghost_size; x < width; ++x) {
+            for (int y = ghost_size; y < height; ++y) {
                 indices.emplace_back(x, y);
             }
         }
@@ -96,6 +96,7 @@ public:
 
 template <int Order>
 struct LaplacianStencil;
+
 /**
 template <>
 struct LaplacianStencil<5> {
@@ -111,18 +112,18 @@ struct LaplacianStencil<5> {
         return sum;
     }
 };
-
 **/
+
 template <>
 struct LaplacianStencil<5> {
-    static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
+    static double compute(const std::vector<double>& grid, int x, int y, int width, int height, int ghost_size) {
         double sum = 0.0;
-        int idx = y * width + x;
+        int idx = y * (width+2*ghost_size) + x + ghost_size;
         sum -= 4 * grid[idx];
-        if (y > 0)         sum += grid[(y - 1) * width + x];
-        if (y < height - 1) sum += grid[(y + 1) * width + x];
-        if (x > 0)         sum += grid[y * width + (x - 1)];
-        if (x < width - 1)  sum += grid[y * width + (x + 1)];
+        if (y > ghost_size)         sum += grid[(y - 1) * (width+2*ghost_size) + x + ghost_size];
+        if (y < height - 1 + 2*ghost_size) sum += grid[(y + 1) * (width+2*ghost_size) + x + ghost_size];
+        if (x > + ghost_size)         sum += grid[y * (width+2*ghost_size) + (x - 1) + ghost_size];
+        if (x < width - 1 + 2*ghost_size)  sum += grid[y * (width+2*ghost_size) + (x + 1) + ghost_size];
         return sum;
     }
 };
@@ -133,7 +134,7 @@ struct LaplacianStencil<5> {
 // Spécialisation pour le stencil à 9 points
 template <>
 struct LaplacianStencil<9> {
-    static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
+    static double compute(const std::vector<double>& grid, int x, int y, int width, int height, int ghost_size) {
         int idx = y * width + x;
         double center = grid[idx];
         // Pour gérer les conditions aux limites, on peut utiliser la valeur centrale en bordure.
@@ -174,21 +175,22 @@ public:
     std::vector<double> u, u_buffer;
     std::vector<double> v, v_buffer;
     GrayScottParameters params;
+    int ghost_size = 1 ; 
 
     GrayScottModel(int w, int h, GrayScottParameters p)
         : width(w), height(h), params(p)
     {
-        u.resize(width * height, 1.0);
-        v.resize(width * height, 0.0);
-        u_buffer.resize(width * height, 0.0);
-        v_buffer.resize(width * height, 0.0);
+        u.resize((width+2*ghost_size) * (height+2*ghost_size), 1.0);
+        v.resize((width+2*ghost_size) * (height+2*ghost_size), 0.0);
+        u_buffer.resize((width+2*ghost_size) * (height+2*ghost_size), 0.0);
+        v_buffer.resize((width+2*ghost_size) * (height+2*ghost_size), 0.0);
 
         int cx = width / 2, cy = height / 2;
         for (int j = cy - 10; j < cy + 10; ++j) {
             for (int i = cx - 10; i < cx + 10; ++i) {
                 if(i >= 0 && i < width && j >= 0 && j < height) {
-                    u[j * width + i] = 0.50;
-                    v[j * width + i] = 0.25;
+                    u[j * (width+2) + i] = 0.50;
+                    v[j * (width+2) + i] = 0.25;
                 }
             }
         }
@@ -198,7 +200,7 @@ public:
 
 
     inline double laplacian(const std::vector<double>& grid, int x, int y) {
-        return LaplacianStencil<5>::compute(grid, x, y, width, height) ; 
+        return LaplacianStencil<5>::compute(grid, x, y, width, height, 1) ; 
     }
 
     void update(double dt, const std::vector<std::pair<int,int>>& order) {
@@ -206,7 +208,7 @@ public:
 #pragma omp  for schedule(guided)
         for (const auto &coord : order) {
             int x = coord.first, y = coord.second;
-            int idx = y * width + x;
+            int idx = y * (width+2) + x+1;
             double u_val = u[idx];
             double v_val = v[idx];
             double Lu = laplacian(u, x, y);
@@ -221,6 +223,40 @@ public:
         std::swap(u, u_buffer);
         std::swap(v, v_buffer);
 	}
+    }
+
+
+void zero_ghosts(std::vector<double>& grid, int width, int height, int ghost_size){
+	int idx ; 
+	// top and bottom ghosts
+	for (int g = 0 ; g < ghost_size; g++){
+		// bottom ghosts
+		for (int i = 0 ; i < width + 2 * ghost_size ; i++){
+			idx = g * width + i ; 
+			grid[idx] = 0.0 ; 
+		}
+                // top ghosts
+                for (int i = 0 ; i < width + 2 * ghost_size ; i++){
+                        idx = (height + 2*ghost_size - g) * width - i ;
+                        grid[idx] = 0.0 ;
+                }
+		
+	}
+	// left and right ghosts
+	for (int j = ghost_size ; j < height + ghost_size; j++){
+		// left ghosts
+		for (int g = 0 ; g < ghost_size ; g++){
+			idx = j * width + g ; 	
+			grid[idx] = 0.0 ; 
+		}		
+                // right ghosts
+                for (int g = 0 ; g < ghost_size ; g++){
+                        idx = j * width + g + width + ghost_size;
+                        grid[idx] = 0.0 ;
+                }
+		
+	}
+
     }
 };
 
@@ -305,9 +341,9 @@ void handleOutput(int iteration, int width, int height, GrayScottModel& model,
 
 int main(int argc, char** argv) {
 //	std::string curveType = "column"
-//	std::string curveType = "row" ; 
+	std::string curveType = "row" ; 
 //    std::string curveType = "classic"	
-    std::string curveType = "zorder";
+//    std::string curveType = "zorder";
 //    std::string curveType = "hilbert";
     if (argc > 1) {
         curveType = argv[1];
@@ -329,6 +365,8 @@ int main(int argc, char** argv) {
     const int width = 512;
     const int height = 512;
 
+	const int ghost_size = 1;
+
     // Configuration de la sortie
     OutputSettings settings;
     settings.enableOutput = true;    // Peut être mis à false pour performances
@@ -337,14 +375,14 @@ int main(int argc, char** argv) {
 
 
 
-    auto order = curve->generate(width, height);
+    auto order = curve->generate(width, height, ghost_size);
 
     
     GrayScottParameters params = {0.16, 0.08, 0.060, 0.062};
     GrayScottModel model(width, height, params);
 
     // Sauvegarde initiale
-    handleOutput(0, width, height, model, settings);
+    handleOutput(0, width+2*ghost_size, height+2*ghost_size, model, settings);
 
 
     const int steps = 5000;
@@ -357,7 +395,7 @@ int main(int argc, char** argv) {
 #pragma omp single
 	{	
         if (settings.enableOutput && (i % settings.saveInterval == 0)) {
-            handleOutput(i, width, height, model, settings);
+            handleOutput(i, width+2*ghost_size, height+2*ghost_size, model, settings);
         }
         if (i % 1000 == 0) {
             std::cout << "Étape " << i << "\n";
