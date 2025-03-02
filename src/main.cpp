@@ -139,13 +139,13 @@ public:
 
 template <int Order>
 struct LaplacianStencil {
-    inline static double compute(const std::vector<double>& grid, int x, int y, int width, int height) {
+    inline static double compute(const std::vector<double>& grid, int x, int y, int idx, int width, int height) {
         constexpr int ghost_size = StencilTraits<Order>::ghost_size;
 //	const int ghost_size = 1 ; 
 	if constexpr(Order == 5){
 	        double sum = 0.0;
 		int width_with_ghost = width + 2*ghost_size ; 
-	        int idx = y * (width_with_ghost) + x + ghost_size;
+//	        int idx = y * (width_with_ghost) + x + ghost_size;
 	        sum -= 4 * grid[idx];
 	        double up     = grid[idx - (width_with_ghost)] ;//* (y > ghost_size);
 	        double down   = grid[idx + (width_with_ghost) ] ;//* (y < height - 1 + 2 *ghost_size);
@@ -155,7 +155,7 @@ struct LaplacianStencil {
 	        return sum;
 	}
 	else if constexpr( Order == 9){
-	        int idx = y * width + x;
+//	        int idx = y * width + x;
 	        double center = grid[idx];
 	        // Pour gérer les conditions aux limites, on peut utiliser la valeur centrale en bordure.
 	        double north = (y > 0) ? grid[(y - 1) * width + x] : center;
@@ -211,8 +211,8 @@ public:
     }
 
 
-    inline double laplacian(const std::vector<double>& grid, int x, int y) {
-        return LaplacianStencil<Order>::compute(grid, x, y, width, height); 
+    inline double laplacian(const std::vector<double>& grid, int x, int y, int idx) {
+        return LaplacianStencil<Order>::compute(grid, x, y, idx, width, height); 
     }
 
     void update(double dt, const IndicesSOA& order) {
@@ -229,14 +229,14 @@ public:
             int idx = y * (width+2) + x+1 ; 
             double u_val = u[idx];
             double v_val = v[idx];
-            double Lu = laplacian(u, x, y);
-            double Lv = laplacian(v, x, y);
+            double Lu = laplacian(u, x, y, idx);
+            double Lv = laplacian(v, x, y, idx);
 
             double reaction = u_val * v_val * v_val;
             u_buffer[idx] = u_val + (params.Du * Lu - reaction + params.F * (1 - u_val)) * dt;
             v_buffer[idx] = v_val + (params.Dv * Lv + reaction - (FpK) * v_val) * dt;
 
-        }
+	}        
 #pragma omp single
 	{	
         std::swap(u, u_buffer);
